@@ -1,0 +1,42 @@
+stages:
+  - build
+  - test
+
+variables: 
+  CI_MIN_COVERAGE: 4
+   
+include:
+  - project: 'bango/pipeline-tooling/ci-files'  
+    file: '/build-go.yaml'
+  - project: 'bango/pipeline-tooling/ci-files'      
+    file: '/tests-run-golang.yaml'
+  - project: 'bango/pipeline-tooling/ci-files'    
+    file: '/tests-coverage-golang.yaml'
+  - template: 'Workflows/MergeRequest-Pipelines.gitlab-ci.yml'
+
+semgrep:
+  image: returntocorp/semgrep-action:v1
+  script:
+    - python -m semgrep_agent --config https://semgrep.live/p/r2c   
+
+goreportcard:
+  stage: test
+  image:
+    name: registry.gitlab.com/bango/pipeline-tooling/golang-python-base-image:latest
+  before_script:
+    - export BINDIR=/usr/bin 
+    - curl -L https://git.io/vp6lP | sh
+    - go get github.com/gojp/goreportcard/cmd/goreportcard-cli
+    - pip install anybadge
+  script:
+    - goreportcard-cli -t 90 | tee grc.txt
+    - CI_GRC_SCORE=$(sed -nr 's/^.* [A-F][+-]? \((.*)\).*$/\1/p' grc.txt)
+    - CI_GRC_GRADE=$(sed -nr 's/^.* ([A-F][+-]?).*$/\1/p' grc.txt)
+    - anybadge --label="Go Report Card Score" --file=GoReportCardScore.svg --value=$CI_GRC_SCORE 60=red 70=orange 80=yellow 90=green 
+    - anybadge --label="Go Report Card Grade" --file=GoReportCardGrade.svg --value=$CI_GRC_GRADE D-=red D=red D+=red C-=orange C=orange C+=orange B-=yellow B=yellow B+=yellow A-=green A=green A+=green 
+  artifacts:
+    paths:
+      - GoReportCardScore.svg
+      - GoReportCardGrade.svg
+    when: always
+    expire_in: 4 weeks
